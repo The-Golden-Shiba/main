@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bầu Cua Blockchain</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    header {
+      background: #007acc;
+      color: #fff;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    #faces {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      gap: 1rem;
+      max-width: 400px;
+      width: 100%;
+      margin-bottom: 1.5rem;
+    }
+    #faces img {
+      width: 80px;
+      cursor: pointer;
+      border: 3px solid transparent;
+      border-radius: 8px;
+      transition: border-color 0.2s;
+    }
+    #faces img.selected {
+      border-color: gold;
+    }
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .controls input {
+      width: 150px;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+    .controls button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .controls button:hover {
+      background: #218838;
+    }
+    #result {
+      background: #fff;
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      max-width: 400px;
+      width: 100%;
+      white-space: pre-wrap;
+    }
+    footer {
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.9rem;
+      background: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bầu Cua Blockchain</h1>
+  </header>
+  <main>
+    <div id="faces">
+      <img src="bau.png" data-face="0" alt="Bầu">
+      <img src="cua.png" data-face="1" alt="Cua">
+      <img src="ca.png" data-face="2" alt="Cá">
+      <img src="ga.png" data-face="3" alt="Gà">
+      <img src="tom.png" data-face="4" alt="Tôm">
+      <img src="nai.png" data-face="5" alt="Nai">
+    </div>
+    <div class="controls">
+      <input type="number" id="amount" placeholder="Số ETH cược">
+      <button id="betBtn">Đặt Cược</button>
+    </div>
+    <div id="result">Kết quả sẽ hiển thị ở đây.</div>
+  </main>
+  <footer>
+    <small>&copy; 2025 Bầu Cua Blockchain</small>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
+  <script>
+    const contractAddress = '0x5BF71B16e0179AfFe14E14C3033F26bC17E341b7';
+    const chainId = '0x279F';
+    const chainParams = [{
+      chainId, chainName: 'Monad Testnet',
+      rpcUrls: ['https://testnet-rpc.monad.xyz'],
+      nativeCurrency: { name: 'ANSEL', symbol: 'ANSEL', decimals: 18 },
+    }];
+
+    async function switchToMonad() {
+      try { await ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] }); }
+      catch (e) { if (e.code === 4902) await ethereum.request({ method: 'wallet_addEthereumChain', params: chainParams }); }
+    }
+
+    async function init() {
+      if (!window.ethereum) return alert('Vui lòng cài MetaMask');
+      await switchToMonad();
+
+      const abi = await (await fetch('abi.json')).json();
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send('eth_requestAccounts', []);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(contractAddress, abi, signer);
+      let selectedFace;
+
+      document.querySelectorAll('#faces img').forEach(img => {
+        img.addEventListener('click', () => {
+          document.querySelectorAll('#faces img').forEach(i => i.classList.remove('selected'));
+          img.classList.add('selected');
+          selectedFace = img.dataset.face;
+        });
+      });
+
+      document.getElementById('betBtn').onclick = async () => {
+        const amt = document.getElementById('amount').value;
+        if (!selectedFace || !amt) return alert('Chọn linh vật & nhập số ETH');
+        const tx = await contract.placeBet(selectedFace, { value: ethers.utils.parseEther(amt) });
+        await tx.wait();
+      };
+
+      contract.on('BetResult', (bettor, results, win, feeBurn, feeKeep, reward) => {
+        signer.getAddress().then(userAddr => {
+          if (bettor.toLowerCase() !== userAddr.toLowerCase()) return;
+          document.getElementById('result').innerText =
+            `Kết quả: ${results.map(r => ['Bầu','Cua','Cá','Gà','Tôm','Nai'][r]).join(', ')}
+` +
+            `Thắng: ${ethers.utils.formatEther(win)} ETH
+` +
+            `Phí burn: ${ethers.utils.formatEther(feeBurn)} ETH, giữ: ${ethers.utils.formatEther(feeKeep)} ETH
+` +
+            `Token thưởng: ${ethers.utils.formatEther(reward)} TKN`;
+        });
+      });
+    }
+    window.onload = init;
+  </script>
+</body>
+</html>
